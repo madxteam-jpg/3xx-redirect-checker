@@ -1,13 +1,14 @@
+import io
 import pandas as pd
 import requests
 import streamlit as st
+import matplotlib.pyplot as plt
 
 
 def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
     """Checks a URL for redirects, chains, and loops."""
     url = url.strip()
 
-    # Prepend scheme if missing
     if not url.startswith(("http://", "https://")):
         url = "http://" + url
 
@@ -26,7 +27,6 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
 
     try:
         while len(history) <= max_redirects:
-            # Check for loop
             if current_url in history:
                 chain_str = " -> ".join(history + [current_url])
                 return {
@@ -43,7 +43,6 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 current_url, allow_redirects=False, timeout=timeout
             )
 
-            # 3xx Status Code Check
             if 300 <= response.status_code < 400:
                 location = response.headers.get("Location")
                 if not location:
@@ -54,10 +53,8 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                         "Redirect Count": len(history) - 1,
                         "Full Chain": " -> ".join(history),
                     }
-                # Handle relative URLs
                 current_url = requests.compat.urljoin(current_url, location)
             else:
-                # Terminal response reached
                 redirect_count = len(history) - 1
                 chain_str = " -> ".join(history)
 
@@ -86,7 +83,6 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                         "Full Chain": chain_str,
                     }
 
-        # Exceeded limit
         return {
             "URL": url,
             "Is Redirected": "Redirected",
@@ -105,6 +101,41 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
         }
 
 
+def dataframe_to_image(df: pd.DataFrame) -> bytes:
+    """Renders a pandas DataFrame as a clean PNG image in memory."""
+    fig, ax = plt.subplots(figsize=(max(10, len(df.columns) * 2.5), max(3, len(df) * 0.6 + 1.5)))
+    ax.axis('tight')
+    ax.axis('off')
+
+    table = ax.table(
+        cellText=df.values,
+        colLabels=df.columns,
+        cellLoc='left',
+        loc='center'
+    )
+
+    table.auto_set_font_size(False)
+    table.set_fontsize(10)
+    table.scale(1.2, 1.8)
+
+    # Style header and alternating rows
+    for (row, col), cell in table.get_celld().items():
+        if row == 0:
+            cell.set_text_props(weight='bold', color='white')
+            cell.set_facecolor('#1e293b')  # Dark slate header
+        else:
+            if row % 2 == 0:
+                cell.set_facecolor('#f8fafc')  # Subtle zebra striping
+            else:
+                cell.set_facecolor('#ffffff')
+
+    buf = io.BytesIO()
+    plt.savefig(buf, format='png', bbox_inches='tight', dpi=200)
+    plt.close(fig)
+    buf.seek(0)
+    return buf.getvalue()
+
+
 # --- Streamlit UI ---
 st.set_page_config(
     page_title="URL Redirect & Loop Checker", page_icon="🔗", layout="wide"
@@ -113,18 +144,14 @@ st.set_page_config(
 st.title("🔗 URL Redirect & Loop Checker")
 st.write("Enter one URL per line to assess redirect status and chains.")
 
-# Multiline text input
 urls_input = st.text_area(
     "Paste URLs here:",
-    height=200,
+    height=180,
     placeholder="https://example.com\nhttp://httpbin.org/redirect/1\nhttp://httpbin.org/absolute-3xx/3",
 )
 
 if st.button("Check URLs", type="primary"):
-    # Split input by line and clean empty lines
-    url_list = [
-        line.strip() for line in urls_input.splitlines() if line.strip()
-    ]
+    url_list = [line.strip() for line in urls_input.splitlines() if line.strip()]
 
     if not url_list:
         st.warning("Please enter at least one URL.")
@@ -142,41 +169,35 @@ if st.button("Check URLs", type="primary"):
         status_text.empty()
         progress_bar.empty()
 
-        # Convert to DataFrame
         df = pd.DataFrame(results)
 
-        # Highlight status logic
-        st.subheader("Results")
-        st.dataframe(
-            df,
-            column_config={
-                "URL": st.column_config.TextColumn("Original URL", width="medium"),
-                "Is Redirected": st.column_config.TextColumn(
-                    "Is Redirected", width="small"
-                ),
-                "Chain/Loop Status": st.column_config.TextColumn(
-                    "Chain/Loop Status", width="medium"
-                ),
-                "Redirect Count": st.column_config.NumberColumn(
-                    "Hops", width="small"
-                ),
-                "Full Chain": st.column_config.TextColumn(
-                    "Full Path / Chain", width="large"
-                ),
-            },
-            hide_index=True,
-            use_container_width=True,
-        )
+        # Store results in session state so download button persists
+        st.session_state["results_df"] = df
 
-        # Summary Metrics
-        col1, col2, col3, col4 = st.columns(4)
-        col1.metric("Total Checked", len(df))
-        col2.metric("Redirected", len(df[df["Is Redirected"] == "Redirected"]))
-        col3.metric(
-            "Chains Detected",
-            len(df[df["Chain/Loop Status"] == "Redirect Chain Detected"]),
-        )
-        col4.metric(
-            "Loops Detected",
-            len(df[df["Chain/Loop Status"] == "Loop Detected"]),
-        )
+if "results_df" in st.session_state:
+    df = st.session_state["results_df"]
+
+    st.subheader("Results")
+    st.dataframe(
+        df,
+        column_config={
+            "URL": st.column_config.TextColumn("Original URL", width="medium"),
+            "Is Redirected": st.column_config.TextColumn("Is Redirected", width="small"),
+            "Chain/Loop Status": st.column_config.TextColumn("Chain/Loop Status", width="medium"),
+            "Redirect Count": st.column_config.NumberColumn("Hops", width="small"),
+            "Full Chain": st.column_config.TextColumn("Full Path / Chain", width="large"),
+        },
+        hide_index=True,
+        use_container_width=True,
+    )
+
+    # Convert table to PNG image bytes
+    img_bytes = dataframe_to_image(df)
+
+    # Download Button for Image
+    st.download_button(
+        label="📸 Download Results as Image (PNG)",
+        data=img_bytes,
+        file_name="url_redirect_results.png",
+        mime="image/png",
+    )
