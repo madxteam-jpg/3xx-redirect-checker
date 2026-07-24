@@ -1,1 +1,3 @@
-pip install streamlit requests pandas
+streamlit
+requests
+pandas
