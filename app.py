@@ -1,8 +1,8 @@
 import io
+import matplotlib.pyplot as plt
 import pandas as pd
 import requests
 import streamlit as st
-import matplotlib.pyplot as plt
 
 
 def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
@@ -31,7 +31,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 chain_str = " -> ".join(history + [current_url])
                 return {
                     "URL": url,
-                    "Is Redirected": "Redirected",
+                    "Is Redirected": "Redirected - Notify SME",
                     "Chain/Loop Status": "Loop Detected",
                     "Redirect Count": len(history) - 1,
                     "Full Chain": chain_str,
@@ -48,7 +48,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 if not location:
                     return {
                         "URL": url,
-                        "Is Redirected": "Redirected",
+                        "Is Redirected": "Redirected - Notify SME",
                         "Chain/Loop Status": "Broken Redirect (Missing Location)",
                         "Redirect Count": len(history) - 1,
                         "Full Chain": " -> ".join(history),
@@ -61,7 +61,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 if redirect_count == 0:
                     return {
                         "URL": url,
-                        "Is Redirected": "Not Redirected",
+                        "Is Redirected": "Not redirected - Good",
                         "Chain/Loop Status": "Clean (No Chain/Loop)",
                         "Redirect Count": 0,
                         "Full Chain": chain_str,
@@ -69,7 +69,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 elif redirect_count == 1:
                     return {
                         "URL": url,
-                        "Is Redirected": "Redirected",
+                        "Is Redirected": "Redirected - Notify SME",
                         "Chain/Loop Status": "Single Redirect",
                         "Redirect Count": 1,
                         "Full Chain": chain_str,
@@ -77,7 +77,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
                 else:
                     return {
                         "URL": url,
-                        "Is Redirected": "Redirected",
+                        "Is Redirected": "Redirected - Notify SME",
                         "Chain/Loop Status": "Redirect Chain Detected",
                         "Redirect Count": redirect_count,
                         "Full Chain": chain_str,
@@ -85,7 +85,7 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
 
         return {
             "URL": url,
-            "Is Redirected": "Redirected",
+            "Is Redirected": "Redirected - Notify SME",
             "Chain/Loop Status": "Max Redirects Exceeded",
             "Redirect Count": len(history) - 1,
             "Full Chain": " -> ".join(history),
@@ -103,15 +103,17 @@ def check_url(url: str, max_redirects: int = 10, timeout: int = 5) -> dict:
 
 def dataframe_to_image(df: pd.DataFrame) -> bytes:
     """Renders a pandas DataFrame as a clean PNG image in memory."""
-    fig, ax = plt.subplots(figsize=(max(10, len(df.columns) * 2.5), max(3, len(df) * 0.6 + 1.5)))
-    ax.axis('tight')
-    ax.axis('off')
+    fig, ax = plt.subplots(
+        figsize=(
+            max(10, len(df.columns) * 2.8),
+            max(3, len(df) * 0.6 + 1.5),
+        )
+    )
+    ax.axis("tight")
+    ax.axis("off")
 
     table = ax.table(
-        cellText=df.values,
-        colLabels=df.columns,
-        cellLoc='left',
-        loc='center'
+        cellText=df.values, colLabels=df.columns, cellLoc="left", loc="center"
     )
 
     table.auto_set_font_size(False)
@@ -121,16 +123,16 @@ def dataframe_to_image(df: pd.DataFrame) -> bytes:
     # Style header and alternating rows
     for (row, col), cell in table.get_celld().items():
         if row == 0:
-            cell.set_text_props(weight='bold', color='white')
-            cell.set_facecolor('#1e293b')  # Dark slate header
+            cell.set_text_props(weight="bold", color="white")
+            cell.set_facecolor("#1e293b")  # Dark slate header
         else:
             if row % 2 == 0:
-                cell.set_facecolor('#f8fafc')  # Subtle zebra striping
+                cell.set_facecolor("#f8fafc")  # Subtle zebra striping
             else:
-                cell.set_facecolor('#ffffff')
+                cell.set_facecolor("#ffffff")
 
     buf = io.BytesIO()
-    plt.savefig(buf, format='png', bbox_inches='tight', dpi=200)
+    plt.savefig(buf, format="png", bbox_inches="tight", dpi=200)
     plt.close(fig)
     buf.seek(0)
     return buf.getvalue()
@@ -151,7 +153,9 @@ urls_input = st.text_area(
 )
 
 if st.button("Check URLs", type="primary"):
-    url_list = [line.strip() for line in urls_input.splitlines() if line.strip()]
+    url_list = [
+        line.strip() for line in urls_input.splitlines() if line.strip()
+    ]
 
     if not url_list:
         st.warning("Please enter at least one URL.")
@@ -161,7 +165,9 @@ if st.button("Check URLs", type="primary"):
         status_text = st.empty()
 
         for idx, target_url in enumerate(url_list):
-            status_text.text(f"Checking ({idx + 1}/{len(url_list)}): {target_url}")
+            status_text.text(
+                f"Checking ({idx + 1}/{len(url_list)}): {target_url}"
+            )
             res = check_url(target_url)
             results.append(res)
             progress_bar.progress((idx + 1) / len(url_list))
@@ -170,8 +176,6 @@ if st.button("Check URLs", type="primary"):
         progress_bar.empty()
 
         df = pd.DataFrame(results)
-
-        # Store results in session state so download button persists
         st.session_state["results_df"] = df
 
 if "results_df" in st.session_state:
@@ -182,10 +186,18 @@ if "results_df" in st.session_state:
         df,
         column_config={
             "URL": st.column_config.TextColumn("Original URL", width="medium"),
-            "Is Redirected": st.column_config.TextColumn("Is Redirected", width="small"),
-            "Chain/Loop Status": st.column_config.TextColumn("Chain/Loop Status", width="medium"),
-            "Redirect Count": st.column_config.NumberColumn("Hops", width="small"),
-            "Full Chain": st.column_config.TextColumn("Full Path / Chain", width="large"),
+            "Is Redirected": st.column_config.TextColumn(
+                "Is Redirected", width="medium"
+            ),
+            "Chain/Loop Status": st.column_config.TextColumn(
+                "Chain/Loop Status", width="medium"
+            ),
+            "Redirect Count": st.column_config.NumberColumn(
+                "Hops", width="small"
+            ),
+            "Full Chain": st.column_config.TextColumn(
+                "Full Path / Chain", width="large"
+            ),
         },
         hide_index=True,
         use_container_width=True,
